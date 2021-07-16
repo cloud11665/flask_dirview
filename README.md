@@ -19,7 +19,7 @@ when run directly (`./flask_dirview.py`) it will fire up a demo of this micro-li
 
 ## FAQ
 - what in the world is this big binary blob?
-- it's a uuencoded, gzipped tarball of apache's icons
+	- it's a uuencoded, gzipped tarball of apache's icons
 
 - what is the performance?
-- good, very good. Many optimizations have been applied, starting from serving icons over HTTP and not base64, applying heuristics so in most cases, the icon choosing function branches only 3 times.
+	- good, very good. Many optimizations have been applied, starting from serving icons over HTTP and not base64, applying heuristics so in most cases, the icon choosing function branches only 3 times.
