@@ -605,6 +605,8 @@ class DirView:
     self.fpath = folder_path
     self.vpath = view_path
 
+    is_static = self.vpath == self.app.static_url_path
+
     self._uid = hex(randint(0x11111111, 0xFFFFFFFF))[2:]
 
     __func = compile(dedent(rf"""
@@ -621,8 +623,8 @@ class DirView:
     self.app.add_url_rule(icon_rule, None, self._imgfnptr)
 
     __func = compile(dedent(rf"""
-    def __srvdir{self._uid}(dirname):
-      dirpath = os.path.join({self.fpath!r}, dirname)
+    def __srvdir{self._uid}(filename):
+      dirpath = os.path.join({self.fpath!r}, filename)
 
       if not os.path.exists(dirpath):
         return "<h1>Path doesn't exist</h1>", 404
@@ -639,9 +641,9 @@ class DirView:
       return render_dirview(
         path=dirpath,               # full path `/home/foo/.config/bar`
         basepath={self.fpath!r},    # base path `/home/foo`
-        baserelative=dirname,       # relative `.config/bar`
+        baserelative=filename,      # relative `.config/bar`
         iconpath="/__{self._uid}/icons",
-        urlpath=os.path.join({self.vpath!r}, dirname),
+        urlpath=os.path.join({self.vpath!r}, filename),
         address_bar=get_adress_info(),
         column=column,
         ascending=ascending,)
@@ -652,10 +654,15 @@ class DirView:
     _homefunc = partial(self._dirfnptr, "")
     setattr(_homefunc, "__name__", f"__srvhome{self._uid}")
 
-    dir_rule = os.path.join(self.vpath, "<path:dirname>")
+    dir_rule = os.path.join(self.vpath, "<path:filename>")
     self.app.add_url_rule(dir_rule, None, self._dirfnptr)
     self.app.add_url_rule(f"{self.vpath}", None, _homefunc) # handle `basedir/`
     self.app.add_url_rule(f"{self.vpath}/", None, _homefunc)# and `basedir`
+
+    if is_static: # what the fuck??
+      self.app.view_functions["static"] = self._dirfnptr
+      # a partial function would be nicer
+      # but this works. don't touch it.
 
   def __repr__(self):
     return f"DirView({self.vpath} -> {self.fpath})"
