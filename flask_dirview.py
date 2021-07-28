@@ -183,13 +183,13 @@ def timed_lru_cache(seconds:int=0, maxsize:int=64, minutes:int=1, hours:int=0):
     return wrapped_func
   return wrapper_cache
 
-@timed_lru_cache(minutes=5, maxsize=64)
+@timed_lru_cache(minutes=5, maxsize=128)
 def mimetype(path:PathLike) -> str:
   return check_output(["file", "-rb", "--mime-type", path])\
         .decode("utf8")\
         .strip()
 
-@timed_lru_cache(minutes=30, maxsize=16)
+@timed_lru_cache(minutes=30, maxsize=64)
 def multi_mimetype(paths:t.Tuple[PathLike]) -> t.List[str]:
   if not paths:
     return []
