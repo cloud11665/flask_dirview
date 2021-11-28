@@ -18,7 +18,7 @@ The fourth argument is a subclass of `AbstractView` and is the desired frontend
 __author__ = "Cloud11665"
 __copyright__ = "Copyright 2020-present Cloud11665"
 __credits__ = ["Cloud11665"]
-__version__ = "1.1.5"
+__version__ = "1.2.0"
 __email__ = "Cloud11665@protonmail.com"
 __status__ = "Production"
 __license__ = """
@@ -37,7 +37,10 @@ import os
 import os.path
 import tarfile
 import typing as t
+from urllib.parse import urlparse
 import uu
+import re
+import mimetypes
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -46,12 +49,9 @@ from functools import lru_cache, partial, wraps
 from io import BytesIO
 from os import PathLike, listdir
 from os.path import abspath, basename, expanduser, isfile, realpath, relpath
-from hashlib import blake2b
-from pprint import pprint
+from hashlib import sha256
 from subprocess import check_output
 from textwrap import dedent
-from time import sleep
-from uuid import uuid4
 
 import flask as fl
 from jinja2 import Template
@@ -200,7 +200,7 @@ def multi_mimetype(paths:t.Tuple[PathLike]) -> t.List[str]:
 
 def sizeof_fmt(num, suffix="B"):
   if num == 0:
-    return ""
+    return "0B"
   for unit in ["", "ki", "Mi", "Gi", "Ti", "Pi"]:
     if abs(num) < 1024.0:
       if (num - int(num)) < 0.00001:
@@ -227,6 +227,37 @@ def abstractmember(*args):
     return inner
   return outer
 
+#https://blog.asgaard.co.uk/2012/08/03/http-206-partial-content-for-flask-python
+def send_file_partial(path):
+  range_header = fl.request.headers.get("Range", None)
+  if not range_header: return fl.send_file(path)
+
+  size = os.path.getsize(path)
+  byte1, byte2 = 0, None
+
+  m = re.search(r"(\d+)-(\d*)", range_header)
+  g = m.groups()
+
+  if g[0]: byte1 = int(g[0])
+  if g[1]: byte2 = int(g[1])
+
+  length = size - byte1
+  if byte2 is not None:
+      length = byte2 - byte1
+
+  data = None
+  with open(path, "rb") as f:
+      f.seek(byte1)
+      data = f.read(length)
+
+  rv = fl.Response(data,
+      206,
+      mimetype=mimetype(path),
+      direct_passthrough=True)
+  rv.headers.add("Content-Range", "bytes {0}-{1}/{2}".format(
+                    byte1, byte1 + length - 1, size))
+
+  return rv
 
 ##==============================================================================
 ##                               base classes                                 ##
@@ -277,7 +308,8 @@ class ListingItem(object):
 
 @dataclass(init=False)
 class ViewProxy(object):
-  __slots__ = ("path", "urlpath", "items", "iconpath", "basepath", "key", "asc")
+  __slots__ = ("path", "urlpath", "items", "iconpath", "basepath", "key", "asc",
+               "_g")
 
   path: PathLike
   urlpath: str
@@ -292,6 +324,7 @@ class ViewProxy(object):
     self.urlpath = urlpath
     self.key = key
     self.asc = asc
+    self._g = globals()
 
     if iconpath is ...:
       self.iconpath = None
@@ -369,7 +402,7 @@ class DirView:
     self.vpath = view_path
 
     is_static = (self.vpath == self.app.static_url_path)
-    self.uid  = uuid4().hex
+    self.uid  = sha256(self.vpath.encode("utf8")).digest().hex()[2::4]
 
     def iconfn(name):
       if not hasattr(self.frontend, "iconmap"):
@@ -395,7 +428,9 @@ class DirView:
       if not os.access(dirpath, os.R_OK):
         return "<h1>Permission denied</h1>",  403
       if isfile(dirpath):
-        return fl.send_file(dirpath)
+        resp = fl.make_response(send_file_partial(dirpath))
+        resp.headers.add("Accept-Ranges", "bytes")
+        return resp
 
       asc = fl.request.args.get("a", "1") == "1"
       _key = fl.request.args.get("c", "type").lower()
@@ -446,6 +481,18 @@ class Apache(AbstractView):
   <html>
   <head>
     <title>Index of {{ index }}</title>
+    <style type="text/css">
+      body > table > tbody > tr > td:nth-child(2) {
+        max-width: 60vw;
+        word-break: break-all;
+        overflow: hidden;
+      }
+      body > table > tbody > tr > td:nth-child(3) {
+        padding-right: 1rem;
+        word-break: break-all;
+        overflow: hidden;
+      }
+    </style>
     <!-- Made by Cloud11665 [https://cld.sh] under Apache License 2.0 -->
   </head>
   <body>
@@ -479,19 +526,22 @@ class Apache(AbstractView):
         <tr>
           <td valign="top"><img src="{{ icon }}" title="{{ item.mime }}"></td>
           <td><a href="{{ href }}">{{ item.name }}</a></td>
-          <td align="right">{{ item.lastmodfmt }}</td>
+          <td align="left">{{ item.lastmodfmt }}</td>
           <td align="right">{{ item.sizefmt }}</td>
         </tr>
       {% endfor %}
       <tr><th colspan="5"><hr></th></tr>
     </table>
-    <adress style="font-style: italic;">{# address_bar #}</adress>
+    <adress style="font-style: italic;">
+      Flask {{ proxy._g.fl.__version__ }} running flask_dirview
+      {{ proxy._g.__version__ }} at
+      {{ urlparse(proxy._g.fl.globals.request.host_url).netloc }}
+    </adress>
   </body>
   </html>
-    """))
+  """))
 
   iconmap = {}
-
   mimemap = {
     "inode/x-empty": "generic.gif",
     "inode/directory": "dir.gif",
@@ -806,13 +856,11 @@ class Apache(AbstractView):
 
 
 if __name__ == "__main__":
-  import threading
   import webbrowser
   app = fl.Flask("DirViewer")
 
   user = expanduser("~")
-  DirView(app, "/", f"/{basename(user)}", Apache)
-
+  DirView(app, user, f"/{basename(user)}", Apache)
 
   @app.get("/")
   def index():
@@ -821,5 +869,5 @@ if __name__ == "__main__":
     go to <a href="/{basename(user)}">/{basename(user)}</a>
     """
 
-  threading.Thread(target=app.run, kwargs={"port":9898}).start()
   webbrowser.open("http://localhost:9898")
+  app.run(port=9898)
