@@ -2,7 +2,7 @@
 A reimplementation of Apache's directory browser in flask. [Try it](https://cld.sh/static) for yourself
 
 ## how to use
-just copy `flask_dirview.py` from this repo into your project's folder.
+just copy [`flask_dirview.py`](https://raw.githubusercontent.com/Cloud11665/flask_dirview/master/flask_dirview.py) from this repo into your project's folder.
 
 ## Usage:
 ```py
